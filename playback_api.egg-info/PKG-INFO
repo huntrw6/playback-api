@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: playback-api
+Version: 0.1.0
+Summary: Unofficial local-network API for MultiTracks Playback: events, state and optional control
+License: GPL-3.0-or-later
+Requires-Python: >=3.9
+License-File: LICENSE
+Dynamic: license-file

@@ -1,0 +1,2 @@
+[console_scripts]
+playback-api = playback_api.cli:main
