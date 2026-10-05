@@ -3,11 +3,11 @@
 Capture what **MultiTracks Playback** is doing — which song, play or pause, where it is — and control it from a
 script or another computer. No MIDI cues. No extra software on the Playback computer.
 
-> Unofficial. Not made by or connected to MultiTracks. It can stop working if Playback changes.
-
 ## You need
 - Playback running, with **Allow Remote Connections** turned **on** (it can turn off when Playback restarts).
 - Python 3.9 or newer. Nothing else to install.
+
+> Unofficial. Not made by or connected to MultiTracks. It can stop working if Playback changes.
 
 ## Install
 Download the `.whl` file from the [latest release](../../releases/latest), then:
