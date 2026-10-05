@@ -1,6 +1,6 @@
 # Playback Application Programming Interface
 
-Read what **MultiTracks Playback** is doing — which song, play or pause, where it is — and control it from a
+Capture what **MultiTracks Playback** is doing — which song, play or pause, where it is — and control it from a
 script or another computer. No MIDI cues. No extra software on the Playback computer.
 
 > Unofficial. Not made by or connected to MultiTracks. It can stop working if Playback changes.
