@@ -1,7 +1,7 @@
 # Playback Application Programming Interface
 
 Capture what **MultiTracks Playback** is doing — which song, play or pause, where it is — and control it from a
-script or another computer. No MIDI cues. No extra software on the Playback computer.
+script or another computer on the local network. No MIDI cues. No extra software on the Playback computer.
 
 ## You need
 - Playback running, with **Allow Remote Connections** turned **on** (it can turn off when Playback restarts).
