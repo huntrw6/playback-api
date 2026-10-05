@@ -1,0 +1,533 @@
+{
+ "_note": "Example only. Use walk-setlist and discover-sections to build one for your own setlist.",
+ "setlistVersion": 11,
+ "songs": [
+  {
+   "id": 91000001,
+   "position": 1,
+   "name": null,
+   "sections": [
+    {
+     "id": 92000648,
+     "start": 0,
+     "name": null
+    },
+    {
+     "id": 92000649,
+     "start": 4.137,
+     "name": null
+    },
+    {
+     "id": 92000650,
+     "start": 12.413,
+     "name": null
+    },
+    {
+     "id": 92000651,
+     "start": 20.689,
+     "name": null
+    },
+    {
+     "id": 92000652,
+     "start": 37.241,
+     "name": null
+    },
+    {
+     "id": 92000653,
+     "start": 53.793,
+     "name": null
+    },
+    {
+     "id": 92000654,
+     "start": 62.068,
+     "name": null
+    },
+    {
+     "id": 92000655,
+     "start": 66.206,
+     "name": null
+    },
+    {
+     "id": 92000656,
+     "start": 74.482,
+     "name": null
+    },
+    {
+     "id": 92000657,
+     "start": 86.896,
+     "name": null
+    },
+    {
+     "id": 92000658,
+     "start": 103.448,
+     "name": null
+    },
+    {
+     "id": 92000659,
+     "start": 111.724,
+     "name": null
+    },
+    {
+     "id": 92000660,
+     "start": 120,
+     "name": null
+    },
+    {
+     "id": 92000661,
+     "start": 128.275,
+     "name": null
+    },
+    {
+     "id": 92000662,
+     "start": 136.551,
+     "name": null
+    },
+    {
+     "id": 92000663,
+     "start": 153.103,
+     "name": null
+    },
+    {
+     "id": 92000664,
+     "start": 169.655,
+     "name": null
+    },
+    {
+     "id": 92000665,
+     "start": 186.206,
+     "name": null
+    },
+    {
+     "id": 92000666,
+     "start": 202.757,
+     "name": null
+    },
+    {
+     "id": 92000667,
+     "start": 219.309,
+     "name": null
+    },
+    {
+     "id": 92000668,
+     "start": 227.585,
+     "name": null
+    },
+    {
+     "id": 92000669,
+     "start": 235.861,
+     "name": null
+    },
+    {
+     "id": 92000670,
+     "start": 239.999,
+     "name": null
+    },
+    {
+     "id": 92000671,
+     "start": 256.551,
+     "name": null
+    },
+    {
+     "id": 92000672,
+     "start": 264.826,
+     "name": null
+    },
+    {
+     "id": 92000673,
+     "start": 273.102,
+     "name": null
+    },
+    {
+     "id": 92000674,
+     "start": 281.378,
+     "name": null
+    },
+    {
+     "id": 92000675,
+     "start": 285.516,
+     "name": null
+    }
+   ],
+   "durationMeasured": 308.39,
+   "durationSeconds": 309,
+   "durationSource": "operator-verified (Playback shows m:ss, so +-1 s); measured value agrees within 1 s"
+  },
+  {
+   "id": 91000002,
+   "position": 2,
+   "name": null,
+   "sections": [
+    {
+     "id": 92000676,
+     "start": 0,
+     "name": null
+    },
+    {
+     "id": 92000677,
+     "start": 3.454,
+     "name": null
+    },
+    {
+     "id": 92000678,
+     "start": 6.908,
+     "name": null
+    },
+    {
+     "id": 92000679,
+     "start": 10.362,
+     "name": null
+    },
+    {
+     "id": 92000680,
+     "start": 13.816,
+     "name": null
+    },
+    {
+     "id": 92000681,
+     "start": 17.269,
+     "name": null
+    },
+    {
+     "id": 92000682,
+     "start": 24.175,
+     "name": null
+    },
+    {
+     "id": 92000683,
+     "start": 37.988,
+     "name": null
+    },
+    {
+     "id": 92000684,
+     "start": 51.801,
+     "name": null
+    },
+    {
+     "id": 92000685,
+     "start": 65.614,
+     "name": null
+    },
+    {
+     "id": 92000686,
+     "start": 79.427,
+     "name": null
+    },
+    {
+     "id": 92000687,
+     "start": 93.24,
+     "name": null
+    },
+    {
+     "id": 92000688,
+     "start": 107.053,
+     "name": null
+    },
+    {
+     "id": 92000689,
+     "start": 120.866,
+     "name": null
+    },
+    {
+     "id": 92000690,
+     "start": 124.319,
+     "name": null
+    },
+    {
+     "id": 92000691,
+     "start": 138.132,
+     "name": null
+    },
+    {
+     "id": 92000692,
+     "start": 151.945,
+     "name": null
+    },
+    {
+     "id": 92000693,
+     "start": 165.758,
+     "name": null
+    },
+    {
+     "id": 92000694,
+     "start": 179.571,
+     "name": null
+    },
+    {
+     "id": 92000695,
+     "start": 193.384,
+     "name": null
+    },
+    {
+     "id": 92000696,
+     "start": 207.197,
+     "name": null
+    },
+    {
+     "id": 92000697,
+     "start": 221.01,
+     "name": null
+    },
+    {
+     "id": 92000698,
+     "start": 234.823,
+     "name": null
+    },
+    {
+     "id": 92000699,
+     "start": 248.636,
+     "name": null
+    },
+    {
+     "id": 92000700,
+     "start": 262.449,
+     "name": null
+    },
+    {
+     "id": 92000701,
+     "start": 276.262,
+     "name": null
+    },
+    {
+     "id": 92000702,
+     "start": 290.075,
+     "name": null
+    },
+    {
+     "id": 92000703,
+     "start": 303.888,
+     "name": null
+    },
+    {
+     "id": 92000704,
+     "start": 317.701,
+     "name": null
+    },
+    {
+     "id": 92000705,
+     "start": 331.514,
+     "name": null
+    }
+   ],
+   "durationMeasured": 334.88,
+   "durationSeconds": 335,
+   "durationSource": "operator-verified (Playback shows m:ss, so +-1 s); measured value agrees within 1 s"
+  },
+  {
+   "id": 91000003,
+   "position": 3,
+   "name": null,
+   "sections": [
+    {
+     "id": 92000706,
+     "start": 0,
+     "name": null
+    },
+    {
+     "id": 92000707,
+     "start": 4.615,
+     "name": null
+    },
+    {
+     "id": 92000708,
+     "start": 23.076,
+     "name": null
+    },
+    {
+     "id": 92000709,
+     "start": 41.538,
+     "name": null
+    },
+    {
+     "id": 92000710,
+     "start": 60,
+     "name": null
+    },
+    {
+     "id": 92000711,
+     "start": 78.461,
+     "name": null
+    },
+    {
+     "id": 92000712,
+     "start": 96.923,
+     "name": null
+    },
+    {
+     "id": 92000713,
+     "start": 101.538,
+     "name": null
+    },
+    {
+     "id": 92000714,
+     "start": 120,
+     "name": null
+    },
+    {
+     "id": 92000715,
+     "start": 138.461,
+     "name": null
+    },
+    {
+     "id": 92000716,
+     "start": 156.923,
+     "name": null
+    },
+    {
+     "id": 92000717,
+     "start": 166.153,
+     "name": null
+    },
+    {
+     "id": 92000718,
+     "start": 175.384,
+     "name": null
+    },
+    {
+     "id": 92000719,
+     "start": 193.846,
+     "name": null
+    },
+    {
+     "id": 92000720,
+     "start": 212.307,
+     "name": null
+    },
+    {
+     "id": 92000721,
+     "start": 230.769,
+     "name": null
+    },
+    {
+     "id": 92000722,
+     "start": 249.23,
+     "name": null
+    },
+    {
+     "id": 92000723,
+     "start": 258.461,
+     "name": null
+    },
+    {
+     "id": 92000724,
+     "start": 267.692,
+     "name": null
+    },
+    {
+     "id": 92000725,
+     "start": 286.153,
+     "name": null
+    },
+    {
+     "id": 92000726,
+     "start": 304.615,
+     "name": null
+    },
+    {
+     "id": 92000727,
+     "start": 313.846,
+     "name": null
+    }
+   ],
+   "durationMeasured": 322.96,
+   "durationSeconds": 324,
+   "durationSource": "operator-verified (Playback shows m:ss, so +-1 s); measured value agrees within 1 s"
+  },
+  {
+   "id": 91000004,
+   "position": 4,
+   "name": null,
+   "sections": [
+    {
+     "id": 92000728,
+     "start": 0,
+     "name": null
+    },
+    {
+     "id": 92000729,
+     "start": 7.868,
+     "name": null
+    },
+    {
+     "id": 92000730,
+     "start": 23.606,
+     "name": null
+    },
+    {
+     "id": 92000731,
+     "start": 55.081,
+     "name": null
+    },
+    {
+     "id": 92000732,
+     "start": 86.557,
+     "name": null
+    },
+    {
+     "id": 92000733,
+     "start": 116.065,
+     "name": null
+    },
+    {
+     "id": 92000734,
+     "start": 123.934,
+     "name": null
+    },
+    {
+     "id": 92000735,
+     "start": 155.409,
+     "name": null
+    },
+    {
+     "id": 92000736,
+     "start": 188.852,
+     "name": null
+    },
+    {
+     "id": 92000737,
+     "start": 220.327,
+     "name": null
+    },
+    {
+     "id": 92000738,
+     "start": 251.803,
+     "name": null
+    },
+    {
+     "id": 92000739,
+     "start": 289.244,
+     "name": null
+    },
+    {
+     "id": 92000740,
+     "start": 294.351,
+     "name": null
+    },
+    {
+     "id": 92000741,
+     "start": 328.693,
+     "name": null
+    }
+   ],
+   "durationMeasured": 336.53,
+   "durationSeconds": 337,
+   "durationSource": "operator-verified (Playback shows m:ss, so +-1 s); measured value agrees within 1 s"
+  },
+  {
+   "id": 91000005,
+   "position": 5,
+   "name": null,
+   "sections": [
+    {
+     "id": 92000742,
+     "start": 0.0,
+     "name": null
+    }
+   ],
+   "durationMeasured": 607.19,
+   "durationSeconds": 608,
+   "durationSource": "operator-verified (Playback shows m:ss, so +-1 s); measured value agrees within 1 s",
+   "loopsForever": true,
+   "note": "Background music for the end of the set; one section; configured to loop infinitely in Playback."
+  }
+ ]
+}
