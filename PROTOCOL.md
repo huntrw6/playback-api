@@ -34,7 +34,16 @@ section field, no song length, and no names**.
 | `transportFade` | `direction` 1=out, 0=in | CONFIRMED. Playback keeps running; **not visible in the heartbeat** |
 | `setlistSelectSong` | `setlistSongID` | CONFIRMED. Stopped only |
 | `transportNextSong` / `transportPreviousSong` | – | CONFIRMED. Stopped only, no wrap-around; no change at either end |
-| `mixerInfiniteLoop`, `waveformPresetInfiniteLoop`, `transportInfiniteLoop` | unknown | Infinite loop is a Playback config option, not an operator control. Ten guessed payloads had no effect; not pursued |
+| `mixerInfiniteLoop` | `active: bool` | OBSERVED 15x in a practice capture (operator toggling the loop, 8 on / 7 off). Sent by a client it is relayed to others but the heartbeat does not change, so its effect on Playback is **not verified**. Guessed `waveformPresetInfiniteLoop` / `transportInfiniteLoop` payloads had no effect |
+| `transportNavigateToSongMapElementIndex` | `index` | OBSERVED 251x in bursts (index 0..20) while the operator stepped through sections; the position then moved. Sent by a client it is relayed but **has no effect** (tested at several positions, while stopped and playing, with several payload shapes), so it looks like a notification from the Playback app, not a command |
+| `setlistSelectSongTransition` | `songIndex`, `transition` | OBSERVED 6x. `transition` 0, 1 and 4 seen; meaning unknown. A client-sent copy is relayed with no effect |
+| `contentLoadSetlist` | `setlistData{setlistID, isDemo, setlistName, liveData…}` | OBSERVED 3x, a setlist was loaded on the Playback computer. Contains the setlist name: treat as private |
+| `contentUpdateSetlist` | `rentalData[]`, `modularClickSongData[]` | OBSERVED 3x, content metadata refresh |
+| `mixerTrackVolume` | `mappingIDs[]`, `level` 0..1 | OBSERVED 13,816x (about 55% of all frames) while faders moved. `TrackVolume_SongTrack_<n>` or `TrackVolume_Bus_<n>` |
+| `mixerTrackMute` / `mixerTrackSolo` | `mappingIDs[]`, `muteState` / `soloState` = `{muted|unmuted: {}}` / `{soloed|unsoloed: {}}` | OBSERVED 17x / 198x |
+| `audioDeviceChanged` | `{}` | OBSERVED 4x. Both long stalls below ended with one |
+
+**Playback relays every message a client sends to all other clients, unmodified, without validating it** (tested with a track number that does not exist). Seeing a message on the wire is therefore not proof that Playback acted on it. Only the heartbeat is the truth. Tested with a second observer connection.
 
 Section IDs and song IDs are plain integers. Song IDs are not in setlist order.
 
@@ -46,6 +55,14 @@ Section IDs and song IDs are plain integers. Song IDs are not in setlist order.
   setlist is "open next, stay paused". If it is playing at ~0 s, it is "transition and keep playing". Both seen.
 - **Last song**: at the end the selection wraps to song 1 and stops. CONFIRMED once.
 - **Queued/loop jumps**: while playing, position moving by more than ~1.5 s with no command is `position.jump`.
+
+## Heartbeat facts from a 4 h 16 min practice capture
+- Interval 1.000 s (p99 1.021 s) over 14,136 heartbeats.
+- `setlistSongID` is **absent** while a setlist is empty or loading (509 heartbeats, about 8.5 minutes in the capture). Consumers must accept a missing song.
+- `setlistState` values: `ready`, `downloadingContent`, `changed{_0:{setlistUnsaved}}` and `changed{_0:{midiCuesNotSaved}}`. The `changed` states are about 40% of the capture: they mean "edited and not saved", not a new setlist, and `setlistCloudVersion` stays the same.
+- `setlistCloudVersion` moves when a different setlist is loaded (11, 1, 2, 3, 4 in this capture).
+- **Stalls without a disconnect:** Playback stopped sending anything, with the socket still open, for 925 s and again for 319 s. Both ended with `audioDeviceChanged`. The computer did not sleep. A connected socket is not proof of a live Playback: use heartbeat age (the client treats 5 s of silence as a lost connection).
+- The pad was reported on about 76% of the time; it is independent of the sequencer.
 
 ## Discovery without credentials
 - **Setlist order**: CONFIRMED. Step `transportPreviousSong` to the start, then `transportNextSong` to the end
@@ -61,5 +78,7 @@ Section IDs and song IDs are plain integers. Song IDs are not in setlist order.
 ## Not verified
 - Song 5 (91000005) has one section; the operator confirmed that is correct (it is background music set to loop
   forever, so it never reaches its end). Its 608 s length was measured before it wrapped.
-- Infinite loop is a Playback configuration option, not a wire message. It is out of scope.
+- `mixerInfiniteLoop` is a wire message (see above), but nothing in the heartbeat shows the loop state and its effect when sent by a client is not verified. Controlling it is out of scope.
+- The meaning of `setlistSelectSongTransition.transition` values (0, 1, 4).
+- Whether Playback itself sends `transportNavigateToSongMapElementIndex`, or only the Playback Remote app does.
 - Setlist switching and behaviour across a Playback update.

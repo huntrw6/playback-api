@@ -12,7 +12,9 @@ that any automation tool (show control, lighting, scripts) can use.
 - Live state: song (id **and number 1–N**), position, duration/remaining, playing, pad, section, setlist order.
   No MIDI cues needed.
 - Normalized events: `song.started`, `song.resumed`, `song.paused`, `song.stopped`, `song.changed`
-  (with `continuesPlaying`), `section.jump`, `section.entered`, `fade.out/in`, `pad.on/off`, `position.jump`, …
+  (with `continuesPlaying`), `section.jump`, `section.entered`, `section.navigate`, `fade.out/in`, `pad.on/off`,
+  `position.jump`, `setlist.state`, `setlist.loaded`, `loop.infinite`, `mixer.mute/solo`, `audio.device.changed`, …
+- Mixer state (latest fader levels, mutes, solos) is tracked quietly; `--volume-events` turns each fader move into an event.
 - Control (opt-in): play, pause, return to start, seek, jump to section, pad, fade, loop, select/next/previous song.
 - Addressing by **song number** (`3`) or **song id** (`91000003`), and sections by number within a song.
 - Setlist and section discovery with no account access and no Playback files read.
@@ -93,7 +95,7 @@ names or lengths, so those come from the file (your own tools can write it). `du
 ## HTTP API
 | Request | Purpose |
 |---|---|
-| `GET /state` | connection, songId/songNumber/songName/songCount, position, duration, remaining, playing, pad, sectionId/sectionNumber, fadedOut, setlist |
+| `GET /state` | connection, songId/songNumber/songName/songCount, position, duration, remaining, playing, pad, sectionId/sectionNumber, fadedOut, setlist, setlistState, infiniteLoop, muted, soloed, heartbeatAge |
 | `GET /events?since=N` | recent events with `seq > N` |
 | `GET /stream` | Server-Sent Events, one named event per normalized event |
 | `GET /setlist` | order with numbers, durations, names and sections |
@@ -112,14 +114,25 @@ Commands: `play`, `pause`, `return-to-start`, `seek {seconds}`, `section {sectio
 - `walk-setlist` and section discovery move the selected song and position. Run them when idle.
 
 ## Known limits
-- **Fade state is not in the heartbeat.** `fadedOut` is `null` (unknown) until a fade command is seen.
+- **Fade state is not in the heartbeat.** `fadedOut` is `null` (unknown) until a fade command is seen. The same
+  goes for `infiniteLoop`: unknown until the toggle is seen.
+- **`songId` can be `null`** while a setlist is empty or loading. Events: `song.cleared`, then `song.selected` with
+  `reason: "loaded"`.
+- **Playback can stall for minutes with the connection still open** (seen around audio-device changes). The client
+  reports `connection.lost` with `reason: "stalled"` after 5 s without a heartbeat and reconnects.
+- **Playback relays any message a client sends to every other client, unvalidated.** A message on the wire does not
+  prove Playback acted on it; the heartbeat does.
 - **The last song wraps to song 1 and stops.** A song set to loop forever never ends.
 - The pad starts with Play and follows pad commands about 5–7 s later.
-- Names and lengths are not exposed by Playback (file-supplied). Infinite loop is a Playback config option and
-  is not controllable or visible here.
+- Names and lengths are not exposed by Playback (file-supplied). The infinite-loop toggle is visible as an event
+  (`loop.infinite`) but is not controllable or readable from the heartbeat.
 - Remote Connections must be re-enabled after Playback restarts. The API retries quietly and reports
   `connected: false` with the reason.
 
 ## Tests
 `python3 -m unittest discover -s tests` runs the offline tests, including a replay of a real 955-frame operator
-session and a fake Playback on loopback for discovery. Nothing in the tests touches a real Playback.
+session, synthetic cases taken from a 4-hour practice capture, and a fake Playback on loopback for discovery.
+Nothing in the tests touches a real Playback.
+
+Replay any capture offline (both the timestamped-line and the JSON-lines capture formats):
+`python3 -m playback_api replay capture.jsonl`

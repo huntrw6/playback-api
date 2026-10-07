@@ -63,7 +63,11 @@ def main(argv=None) -> int:
     fd = sub.add_parser("find", parents=[shared], help="locate Playback (this computer first, then the network with --scan) and exit")
     fd.add_argument("--all", action="store_true", help="report every Playback found, not just the first")
     fd.add_argument("--json", action="store_true", help="machine-readable output")
-    sub.add_parser("listen", parents=[shared], help="print normalized events as JSON lines")
+    li = sub.add_parser("listen", parents=[shared], help="print normalized events as JSON lines")
+    li.add_argument("--volume-events", action="store_true", help="also emit mixer.volume for every fader message (very chatty)")
+    rp = sub.add_parser("replay", help="replay a capture file offline and print normalized events")
+    rp.add_argument("file")
+    rp.add_argument("--volume-events", action="store_true")
     sub.add_parser("state", parents=[shared], help="print current state once")
     s = sub.add_parser("serve", parents=[shared], help="HTTP + SSE server")
     s.add_argument("--bind", default="127.0.0.1")
@@ -82,6 +86,14 @@ def main(argv=None) -> int:
     a = p.parse_args(argv)
     if a.subnet:
         a.scan = True
+
+    if a.cmd == "replay":
+        from .replay import replay
+        t0 = None
+        for e in replay(a.file, volume_events=a.volume_events):
+            t0 = t0 or e["ts"]
+            print(json.dumps(dict(e, ts=round(e["ts"] - t0, 3))))
+        return 0
 
     if a.cmd == "find":
         from .find import find_playback
@@ -106,6 +118,8 @@ def main(argv=None) -> int:
 
     if a.cmd == "listen":
         c = _client(a)
+        c.volume_events = a.volume_events
+        c.norm.volume_events = a.volume_events
         c.on_event = lambda e: print(json.dumps(e), flush=True)
         try:
             while True:

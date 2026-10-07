@@ -30,12 +30,15 @@ class PlaybackClient:
     def __init__(self, host: str, port: int = 8080, *, allow_control: bool = False,
                  sections: dict[int, list[tuple[float, int]]] | None = None,
                  data=None,
-                 on_event: Callable[[dict], None] | None = None, history: int = 2000):
+                 on_event: Callable[[dict], None] | None = None, history: int = 2000,
+                 volume_events: bool = False):
         self.host, self.port, self.allow_control = host, port, allow_control
         self.data = data  # optional SetlistData
         if data is not None and sections is None:
             sections = data.sections
-        self.norm = Normalizer(sections)
+        self.volume_events = volume_events
+        self.norm = Normalizer(sections, volume_events=volume_events)
+        self._last_msg = 0.0  # wall time of the last frame of any kind
         self.sections = sections or {}
         self.durations: dict[int, float] = dict(data.durations) if data else {}
         self.names: dict[int, str | None] = dict(data.names) if data else {}
@@ -93,14 +96,17 @@ class PlaybackClient:
                 continue
             backoff = 1.0
             self._ws = ws
-            self.norm = Normalizer(self.sections)  # fresh state: fade is unknown again
+            self.norm = Normalizer(self.sections, volume_events=self.volume_events)  # fresh state: fade unknown again
             self.connected, self.last_error = True, None
             self._emit({"type": "connection.up", "ts": time.time(), "host": self.host, "port": self.port})
             try:
                 while not self._stop.is_set():
                     raw = ws.recv(timeout=5.0)
                     if raw is None:
+                        # Playback can stall for minutes with the socket still open (seen around audio
+                        # device changes): no frames at all, no close. Treat silence as a lost connection.
                         raise WSClosed("no heartbeat for 5s")
+                    self._last_msg = time.time()
                     try:
                         msg = json.loads(raw)
                     except ValueError:
@@ -121,7 +127,9 @@ class PlaybackClient:
                 self._ws = None
                 if self.connected:
                     self.connected = False
-                    self._emit({"type": "connection.lost", "ts": time.time(), "error": self.last_error})
+                    stalled = "no heartbeat" in (self.last_error or "")
+                    self._emit({"type": "connection.lost", "ts": time.time(), "error": self.last_error,
+                                "reason": "stalled" if stalled else "closed"})
 
     # ---- state ------------------------------------------------------------
     def _maybe_seed(self, version) -> None:
@@ -150,6 +158,11 @@ class PlaybackClient:
             "sectionNumber": next((i + 1 for i, r in enumerate(rows) if r[1] == sec), None),
             "fadedOut": self.norm.fade,  # None = unknown (fade is not in the heartbeat)
             "setlistVersion": hb.get("ver"), "setlist": self.setlist,
+            "setlistState": self.norm.setlist_state,  # ready | downloading | unsaved | midi-cues-unsaved
+            "infiniteLoop": self.norm.infinite_loop,  # None = unknown until the toggle is seen
+            "muted": sorted(k for k, v in self.norm.mixer_mute.items() if v),
+            "soloed": sorted(k for k, v in self.norm.mixer_solo.items() if v),
+            "heartbeatAge": round(time.time() - self._last_msg, 2) if self._last_msg else None,
         }
 
     def wait_for(self, pred: Callable[[dict], bool], timeout: float = 3.0) -> bool:

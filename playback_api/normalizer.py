@@ -20,6 +20,17 @@ section.entered  playback entered a section (needs a section map)
 section.loop     section loop toggled
 position.jump    position moved while playing with no command (queued section jump, or loop wrap)
 fade.out/in      fade command seen (state is NOT in the heartbeat; unknown after reconnect)
+section.navigate the operator stepped to a section-map element (index); position lands at the next boundary
+setlist.state    heartbeat setlistState changed (ready | downloading | unsaved | midi-cues-unsaved)
+setlist.loaded   a setlist was loaded on the Playback computer (setlistId, isDemo)
+setlist.updated  setlist content metadata was refreshed (counts only)
+song.cleared     the heartbeat lost its song (setlist empty or loading); songId is None until one is selected
+song.transition.requested  setlistSelectSongTransition seen (songIndex, raw transition code; meaning unconfirmed)
+loop.infinite    the infinite-loop toggle changed (active)
+mixer.mute       track or bus mute changed (scope, number, on)
+mixer.solo       track solo changed (scope, number, on)
+mixer.volume     track or bus fader moved (only with volume_events=True; the latest levels are always in Normalizer.mixer)
+audio.device.changed  Playback saw an audio device change (Playback can stall for minutes around these)
 pad.requested    pad button command seen
 pad.on/off       pad state actually changed (follows the command by ~5-7 s)
 message.unknown  a message type this version does not know
@@ -27,6 +38,7 @@ message.unknown  a message type this version does not know
 from __future__ import annotations
 
 import bisect
+import re
 from typing import Any
 
 START_WINDOW = 2.0  # seconds: a play at position < this counts as "from the start"
@@ -38,9 +50,42 @@ def _first_key(msg: dict) -> str:
     return next(iter(msg))
 
 
+_MAPPING = re.compile(r"^Track(?P<kind>Volume|Mute|Solo)_(?P<scope>SongTrack|Bus)_(?P<n>\d+)$")
+
+
+def _parse_mapping(mapping_id: str) -> dict:
+    """'TrackMute_Bus_18' -> {scope: 'bus', number: 18}. Unrecognised ids keep the raw string."""
+    m = _MAPPING.match(mapping_id)
+    if not m:
+        return {"scope": None, "number": None, "mappingId": mapping_id}
+    return {"scope": "track" if m["scope"] == "SongTrack" else "bus", "number": int(m["n"])}
+
+
+def _setlist_state(raw: Any) -> tuple[str, str | None]:
+    """Heartbeat setlistState -> (name, detail). Seen: ready, downloadingContent,
+    changed{_0:{setlistUnsaved|midiCuesNotSaved}}."""
+    if not isinstance(raw, dict) or not raw:
+        return "unknown", None
+    name = next(iter(raw))
+    if name == "changed":
+        inner = raw[name].get("_0") if isinstance(raw[name], dict) else None
+        detail = next(iter(inner)) if isinstance(inner, dict) and inner else None
+        return ("unsaved" if detail == "setlistUnsaved" else "midi-cues-unsaved" if detail == "midiCuesNotSaved" else "changed"), detail
+    return ("downloading" if name == "downloadingContent" else name), None
+
+
 class Normalizer:
-    def __init__(self, sections: dict[int, list[tuple[float, int]]] | None = None):
+    def __init__(self, sections: dict[int, list[tuple[float, int]]] | None = None, *,
+                 volume_events: bool = False):
         # sections: songId -> sorted [(startTime, sectionId)]
+        # volume_events: emit mixer.volume for every fader message (hundreds per minute while a
+        # fader moves). Off by default; the latest levels are always kept in self.mixer.
+        self.volume_events = volume_events
+        self.mixer: dict[str, float] = {}  # "track:12" / "bus:3" -> level
+        self.mixer_mute: dict[str, bool] = {}
+        self.mixer_solo: dict[str, bool] = {}
+        self.infinite_loop: bool | None = None  # None = unknown until the toggle is seen
+        self.setlist_state: str | None = None
         self.sections = {k: sorted(v) for k, v in (sections or {}).items()}
         self.hb: dict | None = None
         self.fade: bool | None = None  # None = unknown, True = faded out
@@ -91,6 +136,28 @@ class Normalizer:
             emit("section.loop", songId=self.song, sectionId=body.get("setlistSongSectionID"), active=body.get("active"))
         elif kind == "transportPlay":
             pass  # the heartbeat edge carries the position, so we classify there
+        elif kind == "transportNavigateToSongMapElementIndex":
+            # Operator stepped through section-map elements (bursts of index 0..N). The position
+            # then moves by itself, so suppress position.jump and let the start window decide
+            # whether the next play is a start or a resume.
+            self._cmd_ts = ts
+            self._armed = True
+            emit("section.navigate", songId=self.song, index=body.get("index"))
+        elif kind == "mixerInfiniteLoop":
+            self.infinite_loop = bool(body.get("active"))
+            emit("loop.infinite", active=self.infinite_loop)
+        elif kind == "setlistSelectSongTransition":
+            emit("song.transition.requested", songIndex=body.get("songIndex"), transition=body.get("transition"))
+        elif kind == "contentLoadSetlist":
+            data = body.get("setlistData") or {}
+            emit("setlist.loaded", setlistId=data.get("setlistID"), isDemo=data.get("isDemo"))
+        elif kind == "contentUpdateSetlist":
+            emit("setlist.updated", rentals=len(body.get("rentalData") or []),
+                 modularClick=len(body.get("modularClickSongData") or []))
+        elif kind == "audioDeviceChanged":
+            emit("audio.device.changed")
+        elif kind in ("mixerTrackMute", "mixerTrackSolo", "mixerTrackVolume"):
+            self._mixer(kind, body, emit)
         else:
             emit("message.unknown", kind=kind, body=body)
         return ev
@@ -107,16 +174,38 @@ class Normalizer:
                     return start
         return None
 
-    def _section_at(self, song: int, t: float) -> int | None:
-        rows = self.sections.get(song)
+    def _section_at(self, song: int | None, t: float) -> int | None:
+        rows = self.sections.get(song) if song is not None else None
         if not rows:
             return None
         i = bisect.bisect_right([r[0] for r in rows], t) - 1
         return rows[i][1] if i >= 0 else None
 
+    def _mixer(self, kind: str, body: dict, emit) -> None:
+        for mid in body.get("mappingIDs") or []:
+            who = _parse_mapping(mid)
+            key = "%s:%s" % (who["scope"], who["number"]) if who["scope"] else mid
+            if kind == "mixerTrackVolume":
+                self.mixer[key] = body.get("level")
+                if self.volume_events:
+                    emit("mixer.volume", level=body.get("level"), **who)
+            elif kind == "mixerTrackMute":
+                on = "muted" in (body.get("muteState") or {})
+                self.mixer_mute[key] = on
+                emit("mixer.mute", on=on, **who)
+            else:
+                on = "soloed" in (body.get("soloState") or {})
+                self.mixer_solo[key] = on
+                emit("mixer.solo", on=on, **who)
+
     def _heartbeat(self, sd: dict, ts: float, emit) -> None:
+        sl_state, sl_detail = _setlist_state(sd.get("setlistState"))
+        if sl_state != self.setlist_state:
+            if self.setlist_state is not None:  # the snapshot already carries the first value
+                emit("setlist.state", state=sl_state, detail=sl_detail, previous=self.setlist_state)
+            self.setlist_state = sl_state
         cur = {
-            "song": sd["setlistSongID"],
+            "song": sd.get("setlistSongID"),  # absent while a setlist is empty/loading
             "t": sd["sequenceTime"],
             "playing": "playing" in sd["sequencerPlayState"],
             "pad": "playing" in sd["padPlayerPlayState"],
@@ -128,13 +217,29 @@ class Normalizer:
             self._armed = cur["t"] < START_WINDOW
             self._section = self._section_at(cur["song"], cur["t"])
             emit("state.snapshot", songId=cur["song"], position=cur["t"], playing=cur["playing"],
-                 pad=cur["pad"], setlistVersion=cur["ver"], fade=None)
+                 pad=cur["pad"], setlistVersion=cur["ver"], fade=None, setlistState=sl_state)
             return
 
         if cur["ver"] != prev["ver"]:
             emit("setlist.changed", version=cur["ver"], previous=prev["ver"])
 
         changed = cur["song"] != prev["song"]
+        if changed and cur["song"] is None:
+            # Setlist empty/loading: the heartbeat drops the song id. Not an auto-advance; do not
+            # classify it as an ended song, and do not arm a start.
+            emit("song.cleared", previousSongId=prev["song"])
+            self._sel, self._section = None, None
+            if cur["pad"] != prev["pad"]:
+                emit("pad.on" if cur["pad"] else "pad.off", songId=None)
+            return
+        if changed and prev["song"] is None:
+            # A song appeared (setlist finished loading). That is a selection, never a start/end.
+            self._sel = None
+            emit("song.selected", songId=cur["song"], reason="loaded")
+            self._armed = cur["t"] < START_WINDOW
+            self._section = None
+            changed = False
+            prev = dict(prev, song=cur["song"], playing=False, t=cur["t"])
         if changed:
             by_select = self._sel and self._sel[0] == cur["song"] and ts - self._sel[1] < SELECT_WINDOW
             self._sel = None

@@ -13,7 +13,7 @@ script or another computer on the local network. No MIDI cues. No extra software
 Download the `.whl` file from the [latest release](../../releases/latest), then:
 
 ```bash
-pip install playback_api-0.1.0-py3-none-any.whl
+pip install playback_api-*-py3-none-any.whl
 ```
 Now you can type `playback-api` anywhere. Or skip installing: download this folder and use
 `python3 -m playback_api` from inside it.
@@ -26,6 +26,7 @@ playback-api find            # is Playback on this computer?
 playback-api find --scan     # not here? search your network for it
 playback-api state --scan    # show what Playback is doing now
 playback-api listen --scan   # live feed: song started, paused, resumed, ...
+playback-api replay capture.jsonl   # replay a saved capture offline
 ```
 
 It looks on the computer you run it on first. `--scan` also searches your network. Without `--scan` it never
