@@ -1,6 +1,6 @@
 [project]
 name = "playback-api"
-version = "0.2.0"
+version = "2.0.0"
 description = "Unofficial local-network API for MultiTracks Playback: events, state and optional control"
 license = {text = "GPL-3.0-or-later"}
 requires-python = ">=3.9"

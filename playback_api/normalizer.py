@@ -27,6 +27,8 @@ setlist.updated  setlist content metadata was refreshed (counts only)
 song.cleared     the heartbeat lost its song (setlist empty or loading); songId is None until one is selected
 song.transition.requested  setlistSelectSongTransition seen (songIndex, raw transition code; meaning unconfirmed)
 loop.infinite    the infinite-loop toggle changed (active)
+loop.single      the single-Loop button was armed/disarmed (active); disarms itself after one wrap (reason: wrapped)
+midi.mute        the MUTE MIDI toggle changed (active)
 mixer.mute       track or bus mute changed (scope, number, on)
 mixer.solo       track solo changed (scope, number, on)
 mixer.volume     track or bus fader moved (only with volume_events=True; the latest levels are always in Normalizer.mixer)
@@ -89,6 +91,10 @@ class Normalizer:
         self.sections = {k: sorted(v) for k, v in (sections or {}).items()}
         self.hb: dict | None = None
         self.fade: bool | None = None  # None = unknown, True = faded out
+        self.single_loop: bool | None = None  # None = unknown until the toggle is seen
+        self.midi_muted: bool | None = None
+        self.setlist_id: int | None = None  # only known if the load happened while we were listening
+        self.setlist_name: str | None = None
         self._armed = True  # next play counts as a "start"
         self._sel: tuple[int, float] | None = None
         self._ret_ts = -1e9
@@ -146,11 +152,21 @@ class Normalizer:
         elif kind == "mixerInfiniteLoop":
             self.infinite_loop = bool(body.get("active"))
             emit("loop.infinite", active=self.infinite_loop)
+        elif kind == "mixerLoop":
+            self.single_loop = bool(body.get("active"))
+            emit("loop.single", active=self.single_loop, songId=self.song)
+        elif kind == "mixerMuteMIDI":
+            self.midi_muted = bool(body.get("active"))
+            emit("midi.mute", active=self.midi_muted)
         elif kind == "setlistSelectSongTransition":
             emit("song.transition.requested", songIndex=body.get("songIndex"), transition=body.get("transition"))
         elif kind == "contentLoadSetlist":
             data = body.get("setlistData") or {}
-            emit("setlist.loaded", setlistId=data.get("setlistID"), isDemo=data.get("isDemo"))
+            # The name can identify a private service plan, so it is kept in state only (and shown only by
+            # state / the HTTP /state route), never put in the event stream that callers may log or forward.
+            self.setlist_id, self.setlist_name = data.get("setlistID"), data.get("setlistName")
+            self.single_loop = None  # a new setlist resets transient toggles we cannot read back
+            emit("setlist.loaded", setlistId=self.setlist_id, isDemo=data.get("isDemo"))
         elif kind == "contentUpdateSetlist":
             emit("setlist.updated", rentals=len(body.get("rentalData") or []),
                  modularClick=len(body.get("modularClickSongData") or []))
@@ -277,9 +293,17 @@ class Normalizer:
             if abs(drift) > JUMP_TOLERANCE and ts - self._cmd_ts > 2.0:
                 landing = self._section_at(cur["song"], cur["t"])
                 at_start = landing is not None and abs(cur["t"] - self._section_start(landing)) < 1.5
+                # A backward jump with a loop armed is that loop wrapping; no section map is needed to say so.
+                looping = drift < 0 and bool(self.infinite_loop or self.single_loop)
+                likely = "loop" if (drift < 0 and at_start) or looping else "queued-section-jump"
                 emit("position.jump", songId=cur["song"], fromPosition=prev["t"], toPosition=cur["t"],
                      direction="back" if drift < 0 else "forward", sectionId=landing if at_start else None,
-                     likely="loop" if drift < 0 and at_start else "queued-section-jump")
+                     likely=likely)
+                if drift < 0 and self.single_loop and not self.infinite_loop:
+                    # Documented: the Loop button repeats the section once, then switches itself off.
+                    # Playback sends no message for that, so the disarm is inferred from the wrap.
+                    self.single_loop = False
+                    emit("loop.single", active=False, reason="wrapped", songId=cur["song"])
 
         sec = self._section_at(cur["song"], cur["t"])
         if sec != self._section:

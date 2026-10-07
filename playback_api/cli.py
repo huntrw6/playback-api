@@ -68,6 +68,9 @@ def main(argv=None) -> int:
     rp = sub.add_parser("replay", help="replay a capture file offline and print normalized events")
     rp.add_argument("file")
     rp.add_argument("--volume-events", action="store_true")
+    cp = sub.add_parser("capture", parents=[shared], help="passively record every message to a file (sends nothing)")
+    cp.add_argument("file")
+    cp.add_argument("--hours", type=float, default=1.0)
     sub.add_parser("state", parents=[shared], help="print current state once")
     s = sub.add_parser("serve", parents=[shared], help="HTTP + SSE server")
     s.add_argument("--bind", default="127.0.0.1")
@@ -93,6 +96,17 @@ def main(argv=None) -> int:
         for e in replay(a.file, volume_events=a.volume_events):
             t0 = t0 or e["ts"]
             print(json.dumps(dict(e, ts=round(e["ts"] - t0, 3))))
+        return 0
+
+    if a.cmd == "capture":
+        from .capture import record
+        host, port = _resolve_host(a)
+        print("recording %s:%d for %.1f h -> %s (Ctrl+C to stop)" % (host, port, a.hours, a.file), file=sys.stderr, flush=True)
+        try:
+            n = record(a.file, a.hours, host, port)
+        except KeyboardInterrupt:
+            return 0
+        print("%d frames" % n, file=sys.stderr)
         return 0
 
     if a.cmd == "find":

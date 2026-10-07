@@ -32,6 +32,8 @@ COMMANDS = {
     "seek": lambda c, b: c.seek(b["seconds"]),
     "section": lambda c, b: c.jump_to_section(_section(b), b.get("song")),
     "pad": lambda c, b: c.pad(b["on"]), "fade": lambda c, b: c.fade(b["out"]),
+    "loop-infinite": lambda c, b: c.loop_infinite(b["active"]),
+    "loop-once": lambda c, b: c.loop_once(b["active"]),
     "loop-section": lambda c, b: c.loop_section(_section(b), b["active"], b.get("song")),
     "select-song": lambda c, b: c.select_song(_song(b)),
     "next-song": lambda c, b: c.next_song(), "previous-song": lambda c, b: c.previous_song(),

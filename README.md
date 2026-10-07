@@ -43,6 +43,20 @@ playback-api select 3 --scan   # choose song 3 (only works while stopped)
 Song numbers are the song's place in the setlist (1, 2, 3 ...). The first time, it learns the order by stepping
 through the setlist, so do it when Playback is stopped.
 
+## Record a rehearsal
+```bash
+playback-api capture rehearsal.jsonl --hours 5     # listens only; sends nothing
+playback-api replay rehearsal.jsonl                # turn it into events later
+```
+It reconnects by itself, so it can run through a whole practice.
+
+## Loops
+```bash
+curl -X POST localhost:8787/command/loop-once -d '{"active": true}'      # repeat the playing section once
+curl -X POST localhost:8787/command/loop-infinite -d '{"active": true}'  # repeat until switched off
+```
+State shows `singleLoop`, `infiniteLoop` and `midiMuted`.
+
 ## Use it from other programs
 Start a small web service, then call it from anything:
 

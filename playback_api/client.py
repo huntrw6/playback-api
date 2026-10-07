@@ -44,6 +44,7 @@ class PlaybackClient:
         self.names: dict[int, str | None] = dict(data.names) if data else {}
         self._seed_order = list(data.order) if data and data.order else []
         self._seed_version = data.version if data else None
+        self._seed_setlist_id = getattr(data, "setlist_id", None) if data else None
         self.on_event = on_event
         self.events: deque = deque(maxlen=history)
         self.seq = 0
@@ -51,6 +52,7 @@ class PlaybackClient:
         self.last_error: str | None = None
         self.setlist: list[int] = []
         self.setlist_version: int | None = None
+        self.setlist_id: int | None = None  # learned from contentLoadSetlist; None until a load is seen
         self._ws: WebSocket | None = None
         self._lock = threading.RLock()
         self._stop = threading.Event()
@@ -98,6 +100,7 @@ class PlaybackClient:
             self._ws = ws
             self.norm = Normalizer(self.sections, volume_events=self.volume_events)  # fresh state: fade unknown again
             self.connected, self.last_error = True, None
+            self.setlist_id = None  # unknown again: Playback may have been restarted on another setlist
             self._emit({"type": "connection.up", "ts": time.time(), "host": self.host, "port": self.port})
             try:
                 while not self._stop.is_set():
@@ -117,7 +120,17 @@ class PlaybackClient:
                     for e in evs:
                         if e["type"] == "setlist.changed":
                             self.setlist = []  # order is stale until re-walked
+                        elif e["type"] == "setlist.loaded":
+                            # setlistCloudVersion is per setlist (11, 3, 1, 2, 4 were all seen), so a different
+                            # setlist can reuse the same version number. A load of a setlist we have not
+                            # already identified invalidates any song order we are holding.
+                            if e.get("setlistId") != self.setlist_id:
+                                self.setlist = []
+                            self.setlist_id = e.get("setlistId")
+                            self._maybe_seed(self.norm.hb.get("ver") if self.norm.hb else None)
                         elif e["type"] == "state.snapshot":
+                            if self.setlist and e.get("setlistVersion") != self.setlist_version:
+                                self.setlist = []  # version moved while we were disconnected
                             self._maybe_seed(e.get("setlistVersion"))
                         self._emit(e)
             except (OSError, WSClosed) as e:
@@ -134,8 +147,13 @@ class PlaybackClient:
     # ---- state ------------------------------------------------------------
     def _maybe_seed(self, version) -> None:
         """Use the data file's song order only if Playback's setlist version still matches it."""
-        if self._seed_order and not self.setlist and version is not None and version == self._seed_version:
-            self.setlist, self.setlist_version = list(self._seed_order), version
+        if not (self._seed_order and not self.setlist and version is not None and version == self._seed_version):
+            return
+        # The version number alone is not an identity (it is counted per setlist). If the data file names
+        # its setlist and we already know which one is open, they must agree.
+        if self._seed_setlist_id and self.setlist_id and self._seed_setlist_id != self.setlist_id:
+            return
+        self.setlist, self.setlist_version = list(self._seed_order), version
 
     def song_number(self, song_id: int | None) -> int | None:
         return self.setlist.index(song_id) + 1 if song_id in self.setlist else None
@@ -160,6 +178,9 @@ class PlaybackClient:
             "setlistVersion": hb.get("ver"), "setlist": self.setlist,
             "setlistState": self.norm.setlist_state,  # ready | downloading | unsaved | midi-cues-unsaved
             "infiniteLoop": self.norm.infinite_loop,  # None = unknown until the toggle is seen
+            "singleLoop": self.norm.single_loop,      # None = unknown; clears itself after one wrap
+            "midiMuted": self.norm.midi_muted,        # MUTE MIDI toggle; None = unknown
+            "setlistId": self.setlist_id, "setlistName": self.norm.setlist_name,
             "muted": sorted(k for k, v in self.norm.mixer_mute.items() if v),
             "soloed": sorted(k for k, v in self.norm.mixer_solo.items() if v),
             "heartbeatAge": round(time.time() - self._last_msg, 2) if self._last_msg else None,
@@ -202,6 +223,11 @@ class PlaybackClient:
 
     def pad(self, on: bool) -> None: self._send({"transportPad": {"playing": bool(on)}})
     def fade(self, out: bool) -> None: self._send({"transportFade": {"direction": 1 if out else 0}})
+    def loop_infinite(self, active: bool) -> None: self._send({"mixerInfiniteLoop": {"active": bool(active)}})
+    def loop_once(self, active: bool) -> None:
+        """Single Loop button: repeat the playing section once, then it switches itself off."""
+        self._send({"mixerLoop": {"active": bool(active)}})
+
     def loop_section(self, ref: int, active: bool, song: int | str | None = None) -> None:
         self._send({"waveformLoop": {"setlistSongSectionID": self.resolve_section(ref, song), "active": bool(active)}})
 
