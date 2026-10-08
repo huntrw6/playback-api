@@ -73,6 +73,10 @@ Section IDs and song IDs are plain integers. Song IDs are not in setlist order.
 - The user guide describes Live ReOrder (Return key) and Live Crossfade (number keys while playing). Their wire messages were **not** found by sending or by guessing, so they are probably UI-only or need a Mac keyboard path; they can only be learned by recording an operator pressing them (`playback-api capture`).
 - `transportFade` direction 1 = out, 0 = in; the pad fades out over about 5-7 s after `transportPad {playing:false}`.
 
+## Latency (measured end to end, v2.1)
+Playback relays a client's command to every other client within **7-50 ms** over a routed VLAN (about 1 ms ping). It does **not** put play/pause/return in any message of its own: the new state appears only in the once-per-second heartbeat, so a state-based listener sees play/pause/stop **31-946 ms (median ~360 ms) late**, and a play+pause pair under one second apart is **invisible**. `fast_transport` reads the command itself instead (median 430 ms earlier on a real 4-hour capture; 214 of 215 events matched; 50 quick toggles the heartbeat path missed; 0 unconfirmed). It is a prediction until the heartbeat confirms it. It is only as good as the commands that reach the wire; Playback's own buttons do relay (play appeared 249 times in an operator capture and every heartbeat change in the capture followed one).
+- Selecting another song while one is playing stops the transport. Only the select message and a heartbeat with a new song id and `stopped` show it; v2.1 reports `song.stopped` for the old song (`reason: song-selected`).
+
 ## Discovery without credentials
 - **Setlist order**: CONFIRMED. Step `transportPreviousSong` to the start, then `transportNextSong` to the end
   (about 2 s per song). Songs: 91000001, 91000002, 91000003, 91000004, 91000005.

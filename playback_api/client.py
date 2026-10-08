@@ -31,13 +31,13 @@ class PlaybackClient:
                  sections: dict[int, list[tuple[float, int]]] | None = None,
                  data=None,
                  on_event: Callable[[dict], None] | None = None, history: int = 2000,
-                 volume_events: bool = False):
+                 volume_events: bool = False, fast_transport: bool = False):
         self.host, self.port, self.allow_control = host, port, allow_control
         self.data = data  # optional SetlistData
         if data is not None and sections is None:
             sections = data.sections
-        self.volume_events = volume_events
-        self.norm = Normalizer(sections, volume_events=volume_events)
+        self.volume_events, self.fast_transport = volume_events, fast_transport
+        self.norm = Normalizer(sections, volume_events=volume_events, fast_transport=fast_transport)
         self._last_msg = 0.0  # wall time of the last frame of any kind
         self.sections = sections or {}
         self.durations: dict[int, float] = dict(data.durations) if data else {}
@@ -98,7 +98,7 @@ class PlaybackClient:
                 continue
             backoff = 1.0
             self._ws = ws
-            self.norm = Normalizer(self.sections, volume_events=self.volume_events)  # fresh state: fade unknown again
+            self.norm = Normalizer(self.sections, volume_events=self.volume_events, fast_transport=self.fast_transport)  # fresh state: fade unknown again
             self.connected, self.last_error = True, None
             self.setlist_id = None  # unknown again: Playback may have been restarted on another setlist
             self._emit({"type": "connection.up", "ts": time.time(), "host": self.host, "port": self.port})
@@ -178,6 +178,7 @@ class PlaybackClient:
             "setlistVersion": hb.get("ver"), "setlist": self.setlist,
             "setlistState": self.norm.setlist_state,  # ready | downloading | unsaved | midi-cues-unsaved
             "infiniteLoop": self.norm.infinite_loop,  # None = unknown until the toggle is seen
+            "fastTransport": self.fast_transport,
             "singleLoop": self.norm.single_loop,      # None = unknown; clears itself after one wrap
             "midiMuted": self.norm.midi_muted,        # MUTE MIDI toggle; None = unknown
             "setlistId": self.setlist_id, "setlistName": self.norm.setlist_name,

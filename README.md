@@ -50,6 +50,15 @@ playback-api replay rehearsal.jsonl                # turn it into events later
 ```
 It reconnects by itself, so it can run through a whole practice.
 
+## Faster play/pause/stop
+Playback only reports its transport state once a second. With `--fast` (or `fast_transport=True`), play, pause and
+stop are announced from the command itself, about half a second sooner on average, and quick taps are no longer lost.
+Those events carry `provisional: true`; the heartbeat then confirms them quietly, or you get `transport.reverted` with
+the real state if it never does.
+```bash
+playback-api listen --fast
+```
+
 ## Loops
 ```bash
 curl -X POST localhost:8787/command/loop-once -d '{"active": true}'      # repeat the playing section once

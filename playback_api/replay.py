@@ -26,8 +26,8 @@ def _frames(path):
             yield datetime.fromisoformat(ts).timestamp(), json.loads(payload)
 
 
-def replay(path: str, sections=None, volume_events: bool = False):
-    n = Normalizer(sections, volume_events=volume_events)
+def replay(path: str, sections=None, volume_events: bool = False, fast_transport: bool = False):
+    n = Normalizer(sections, volume_events=volume_events, fast_transport=fast_transport)
     for t, msg in _frames(path):
         for e in n.feed(msg, t):
             yield e

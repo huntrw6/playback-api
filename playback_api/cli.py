@@ -37,7 +37,8 @@ def _resolve_host(a) -> tuple:
 def _client(a, control: bool = False) -> PlaybackClient:
     data = load_setlist_file(a.setlist_file) if a.setlist_file else None
     host, port = _resolve_host(a)
-    c = PlaybackClient(host, port, allow_control=control or getattr(a, "allow_control", False), data=data)
+    c = PlaybackClient(host, port, allow_control=control or getattr(a, "allow_control", False), data=data,
+                       fast_transport=getattr(a, "fast", False))
     return c.start()
 
 
@@ -64,10 +65,12 @@ def main(argv=None) -> int:
     fd.add_argument("--all", action="store_true", help="report every Playback found, not just the first")
     fd.add_argument("--json", action="store_true", help="machine-readable output")
     li = sub.add_parser("listen", parents=[shared], help="print normalized events as JSON lines")
+    li.add_argument("--fast", action="store_true", help="announce play/pause/stop from the command (about 30 ms) instead of waiting for the next heartbeat (up to 1 s)")
     li.add_argument("--volume-events", action="store_true", help="also emit mixer.volume for every fader message (very chatty)")
     rp = sub.add_parser("replay", help="replay a capture file offline and print normalized events")
     rp.add_argument("file")
     rp.add_argument("--volume-events", action="store_true")
+    rp.add_argument("--fast", action="store_true", help="replay with fast transport events")
     cp = sub.add_parser("capture", parents=[shared], help="passively record every message to a file (sends nothing)")
     cp.add_argument("file")
     cp.add_argument("--hours", type=float, default=1.0)
@@ -76,6 +79,7 @@ def main(argv=None) -> int:
     s.add_argument("--bind", default="127.0.0.1")
     s.add_argument("--http-port", type=int, default=8787)
     s.add_argument("--allow-control", action="store_true", help="enable POST /command/* (off by default)")
+    s.add_argument("--fast", action="store_true", help="announce play/pause/stop from the command (about 30 ms) instead of the next heartbeat (up to 1 s)")
     sub.add_parser("walk-setlist", parents=[shared], help="discover setlist order (needs control; transport must be stopped)")
     d = sub.add_parser("discover-sections", parents=[shared], help="find section IDs for a song (needs control)")
     d.add_argument("song", help="song id or number")
@@ -93,7 +97,7 @@ def main(argv=None) -> int:
     if a.cmd == "replay":
         from .replay import replay
         t0 = None
-        for e in replay(a.file, volume_events=a.volume_events):
+        for e in replay(a.file, volume_events=a.volume_events, fast_transport=a.fast):
             t0 = t0 or e["ts"]
             print(json.dumps(dict(e, ts=round(e["ts"] - t0, 3))))
         return 0

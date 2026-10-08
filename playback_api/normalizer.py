@@ -1,5 +1,14 @@
 """Turn Playback's raw `pr-protocol` messages into normalized events.
 
+fast_transport (v2.1, off by default)
+-------------------------------------
+Playback relays a play/pause/return/select command to every listener within tens of milliseconds, but the
+state only shows up in the once-per-second heartbeat (median 0.5 s later, up to 1 s). With fast_transport=True
+the command itself produces song.started / song.resumed / song.paused / song.stopped at once, marked
+`provisional: true`. The heartbeat that follows confirms it silently (no duplicate). If the heartbeat has not
+shown the expected state after ~3 s a `transport.reverted` event reports the real state. Commands that would
+change nothing (play while already playing) are ignored.
+
 Pure logic, no I/O: feed it parsed JSON messages with a timestamp and it returns
 a list of event dicts. That makes it replayable against captured logs.
 
@@ -26,6 +35,8 @@ setlist.loaded   a setlist was loaded on the Playback computer (setlistId, isDem
 setlist.updated  setlist content metadata was refreshed (counts only)
 song.cleared     the heartbeat lost its song (setlist empty or loading); songId is None until one is selected
 song.transition.requested  setlistSelectSongTransition seen (songIndex, raw transition code; meaning unconfirmed)
+navigate.requested  Next/Previous song pressed (direction); the heartbeat then shows the new song
+transport.reverted  fast_transport only: a provisional start/pause/stop was not confirmed by the heartbeat (playing = actual state)
 loop.infinite    the infinite-loop toggle changed (active)
 loop.single      the single-Loop button was armed/disarmed (active); disarms itself after one wrap (reason: wrapped)
 midi.mute        the MUTE MIDI toggle changed (active)
@@ -78,11 +89,18 @@ def _setlist_state(raw: Any) -> tuple[str, str | None]:
 
 class Normalizer:
     def __init__(self, sections: dict[int, list[tuple[float, int]]] | None = None, *,
-                 volume_events: bool = False):
+                 volume_events: bool = False, fast_transport: bool = False):
         # sections: songId -> sorted [(startTime, sectionId)]
         # volume_events: emit mixer.volume for every fader message (hundreds per minute while a
         # fader moves). Off by default; the latest levels are always kept in self.mixer.
         self.volume_events = volume_events
+        self.fast_transport = fast_transport
+        self._expected: bool | None = None  # playing state a provisional event promised (fast_transport)
+        self._prov: list[str] = []          # provisional event types waiting for their heartbeat
+        self._prov_ts = 0.0
+        self._prov_hbs = 0
+        self._armed_before = True
+        self._armed_before_next = True
         self.mixer: dict[str, float] = {}  # "track:12" / "bus:3" -> level
         self.mixer_mute: dict[str, bool] = {}
         self.mixer_solo: dict[str, bool] = {}
@@ -112,15 +130,27 @@ class Normalizer:
             ev.append({"type": t, "ts": ts, **kw})
 
         if kind == "heartbeat":
+            n0 = len(ev)
             self._heartbeat(body["stateData"], ts, emit)
+            if self._prov:
+                mine = ev[n0:]
+                del ev[n0:]
+                ev.extend(self._settle_provisional(self.hb, ts, mine, emit))
         elif kind == "setlistSelectSong":
             sid = body["setlistSongID"]
             self._sel = (sid, ts)
             self._armed = True
             emit("song.selected", songId=sid, reason="select")
+            # Selecting another song while one plays makes Playback stop the transport (measured live).
+            if self.fast_transport and self.hb and sid != self.hb["song"] and self._playing_now():
+                self._provisional(emit, ts, "song.stopped", False, songId=self.hb["song"],
+                                  position=self.hb["t"], reason="song-selected")
         elif kind == "transportReturnToStart":
             self._ret_ts = ts
             self._armed = True
+            if self.fast_transport and self.hb and (self._playing_now() or self.hb["t"] > 0):
+                self._provisional(emit, ts, "song.stopped", False, songId=self.hb["song"],
+                                  position=0.0, reason="return-to-start")
         elif kind == "waveformSeek":
             self._cmd_ts = ts
             t = body["sequenceTime"]
@@ -141,7 +171,19 @@ class Normalizer:
         elif kind == "waveformLoop":
             emit("section.loop", songId=self.song, sectionId=body.get("setlistSongSectionID"), active=body.get("active"))
         elif kind == "transportPlay":
-            pass  # the heartbeat edge carries the position, so we classify there
+            # The heartbeat edge carries the authoritative position, so by default we classify there.
+            want = bool(body.get("playing"))
+            self._armed_before_next = self._armed
+            if self.fast_transport and self.hb and want != self._playing_now() and self.hb["song"] is not None:
+                if want:
+                    start = self._armed and self.hb["t"] < START_WINDOW
+                    self._armed = False
+                    self._provisional(emit, ts, "song.started" if start else "song.resumed", True,
+                                      songId=self.hb["song"], position=self.hb["t"], reason="play")
+                else:
+                    self._provisional(emit, ts, "song.paused", False, songId=self.hb["song"], position=self.hb["t"])
+        elif kind in ("transportNextSong", "transportPreviousSong"):
+            emit("navigate.requested", direction="next" if kind == "transportNextSong" else "previous")
         elif kind == "transportNavigateToSongMapElementIndex":
             # Operator stepped through section-map elements (bursts of index 0..N). The position
             # then moves by itself, so suppress position.jump and let the start window decide
@@ -177,6 +219,43 @@ class Normalizer:
         else:
             emit("message.unknown", kind=kind, body=body)
         return ev
+
+    def _playing_now(self) -> bool:
+        """Best known transport state: what a provisional event promised, else the last heartbeat."""
+        if self._expected is not None:
+            return self._expected
+        return bool(self.hb and self.hb["playing"])
+
+    def _provisional(self, emit, ts: float, etype: str, expected: bool, **kw: Any) -> None:
+        if not self._prov:
+            self._prov_ts, self._prov_hbs = ts, 0
+            self._armed_before = self._armed_before_next
+        self._prov.append(etype)
+        self._expected = expected
+        emit(etype, provisional=True, **kw)
+
+    def _settle_provisional(self, cur: dict, ts: float, events: list[dict], emit) -> list[dict]:
+        """Called with the events a heartbeat produced. Drops those the provisional events already announced."""
+        if not self._prov:
+            return events
+        if cur["playing"] == self._expected:
+            same = {"song.started": "play", "song.resumed": "play"}
+            pending = [same.get(t, t) for t in self._prov]  # a start and a resume are one promise: "playing"
+            kept = []
+            for e in events:
+                k = same.get(e["type"], e["type"])
+                if k in pending:
+                    pending.remove(k)  # already announced, one for one
+                else:
+                    kept.append(e)
+            self._prov, self._expected = [], None
+            return kept
+        self._prov_hbs += 1
+        if self._prov_hbs >= 2 and ts - self._prov_ts >= 3.0:
+            self._prov, self._expected = [], None
+            self._armed = self._armed_before  # a later real start must still count as a start
+            emit("transport.reverted", playing=cur["playing"], songId=cur["song"], position=cur["t"])
+        return events
 
     @property
     def song(self) -> int | None:
@@ -240,6 +319,7 @@ class Normalizer:
             emit("setlist.changed", version=cur["ver"], previous=prev["ver"])
 
         changed = cur["song"] != prev["song"]
+        by_select = False
         if changed and cur["song"] is None:
             # Setlist empty/loading: the heartbeat drops the song id. Not an auto-advance; do not
             # classify it as an ended song, and do not arm a start.
@@ -270,6 +350,10 @@ class Normalizer:
             self._armed = True
             self._section = None
 
+        if changed and by_select and prev["playing"] and not cur["playing"]:
+            # Selecting another song while one plays stops the transport (measured on a live Playback): the
+            # OLD song stopped. Without the select message this would be a natural end, handled above.
+            emit("song.stopped", songId=prev["song"], reason="song-selected", position=prev["t"])
         if cur["playing"] and (not prev["playing"] or changed):
             start = (changed and prev["playing"]) or (self._armed and cur["t"] < START_WINDOW)
             emit("song.started" if start else "song.resumed", songId=cur["song"], position=cur["t"],
