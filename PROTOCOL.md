@@ -73,6 +73,12 @@ Section IDs and song IDs are plain integers. Song IDs are not in setlist order.
 - The user guide describes Live ReOrder (Return key) and Live Crossfade (number keys while playing). Their wire messages were **not** found by sending or by guessing, so they are probably UI-only or need a Mac keyboard path; they can only be learned by recording an operator pressing them (`playback-api capture`).
 - `transportFade` direction 1 = out, 0 = in; the pad fades out over about 5-7 s after `transportPad {playing:false}`.
 
+## Song length (v2.2, measured)
+- `waveformSeek` far past the end is **clamped** by Playback and the next heartbeat reports the clamped position. On five real songs the clamp was 1.2-4.0 s short of the real end (279.53 / 265.85 / 260.17 / 410.83 / 606 s against 282.2 / 267.6 / 264.5 / 414.6 / 607.3 s). It is a lower bound, not the length.
+- The true end is the last heartbeat position seen while playing, plus about 0.5 s (heartbeats are 1 s apart). Repeated runs agreed to within 0.3 s.
+- What the end does depends on the song: the next song is selected and stopped (4 of 5), or the next song starts playing by itself (1 of 5, the `setlistSelectSongTransition` behaviour). Playback has no field that says which.
+- No tempo or BPM field exists in any message.
+
 ## Latency (measured end to end, v2.1)
 Playback relays a client's command to every other client within **7-50 ms** over a routed VLAN (about 1 ms ping). It does **not** put play/pause/return in any message of its own: the new state appears only in the once-per-second heartbeat, so a state-based listener sees play/pause/stop **31-946 ms (median ~360 ms) late**, and a play+pause pair under one second apart is **invisible**. `fast_transport` reads the command itself instead (median 430 ms earlier on a real 4-hour capture; 214 of 215 events matched; 50 quick toggles the heartbeat path missed; 0 unconfirmed). It is a prediction until the heartbeat confirms it. It is only as good as the commands that reach the wire; Playback's own buttons do relay (play appeared 249 times in an operator capture and every heartbeat change in the capture followed one).
 - Selecting another song while one is playing stops the transport. Only the select message and a heartbeat with a new song id and `stopped` show it; v2.1 reports `song.stopped` for the old song (`reason: song-selected`).

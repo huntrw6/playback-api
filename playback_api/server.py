@@ -37,7 +37,9 @@ COMMANDS = {
     "loop-section": lambda c, b: c.loop_section(_section(b), b["active"], b.get("song")),
     "select-song": lambda c, b: c.select_song(_song(b)),
     "next-song": lambda c, b: c.next_song(), "previous-song": lambda c, b: c.previous_song(),
-    "walk-setlist": lambda c, b: c.walk_setlist(),
+    "walk-setlist": lambda c, b: c.walk_setlist(measure=b.get("measure")),
+    "measure-song": lambda c, b: c.measure_song_length(bool(b.get("precise"))),
+    "measure-setlist": lambda c, b: c.measure_setlist(bool(b.get("precise"))),
 }
 
 
@@ -79,6 +81,7 @@ def make_server(client: PlaybackClient, bind: str = "127.0.0.1", port: int = 878
                     rows = client.sections.get(sid, [])
                     songs.append({"number": i, "id": sid, "name": client.names.get(sid),
                                   "duration": client.durations.get(sid),
+                                  "durationSource": client._duration_source(sid),
                                   "sections": [{"number": n, "id": r[1], "start": r[0]} for n, r in enumerate(rows, 1)]})
                 self._json(200, {"version": client.setlist_version, "songs": songs})
             elif path == "/stream":

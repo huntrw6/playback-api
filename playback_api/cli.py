@@ -80,7 +80,10 @@ def main(argv=None) -> int:
     s.add_argument("--http-port", type=int, default=8787)
     s.add_argument("--allow-control", action="store_true", help="enable POST /command/* (off by default)")
     s.add_argument("--fast", action="store_true", help="announce play/pause/stop from the command (about 30 ms) instead of the next heartbeat (up to 1 s)")
-    sub.add_parser("walk-setlist", parents=[shared], help="discover setlist order (needs control; transport must be stopped)")
+    w = sub.add_parser("walk-setlist", parents=[shared], help="discover setlist order (needs control; transport must be stopped)")
+    w.add_argument("--measure", choices=["quick", "precise"], help="also measure every song's length")
+    ms = sub.add_parser("measure-songs", parents=[shared], help="measure every song's length (needs control; transport must be stopped)")
+    ms.add_argument("--precise", action="store_true", help="also play the last seconds of each song, silently, for +-0.5 s (about 17 s per song)")
     d = sub.add_parser("discover-sections", parents=[shared], help="find section IDs for a song (needs control)")
     d.add_argument("song", help="song id or number")
     d.add_argument("id_lo", type=int)
@@ -144,7 +147,7 @@ def main(argv=None) -> int:
                 time.sleep(1)
         except KeyboardInterrupt:
             return 0
-    needs_control = a.cmd in ("walk-setlist", "discover-sections", "select", "play", "pause")
+    needs_control = a.cmd in ("walk-setlist", "measure-songs", "discover-sections", "select", "play", "pause")
     c = _client(a, control=needs_control)
     if not c.wait_for(lambda s: s["songId"] is not None, 8):
         print("could not connect: %s\n(is Playback running with 'Allow Remote Connections' on?)" % c.last_error, file=sys.stderr)
@@ -160,7 +163,10 @@ def main(argv=None) -> int:
             print("serving on http://%s:%d (control %s)" % (a.bind, a.http_port, "ON" if a.allow_control else "off"), flush=True)
             srv.serve_forever()
         elif a.cmd == "walk-setlist":
-            print(json.dumps(c.walk_setlist()))
+            print(json.dumps(c.walk_setlist(measure=a.measure)))
+        elif a.cmd == "measure-songs":
+            res = c.measure_setlist(precise=a.precise)
+            print(json.dumps([dict(number=c.song_number(k), **v) for k, v in res.items()], indent=2))
         elif a.cmd == "discover-sections":
             from .discovery import discover_sections
             print(json.dumps(discover_sections(c, c.resolve_song(a.song), a.id_lo, a.id_hi)))

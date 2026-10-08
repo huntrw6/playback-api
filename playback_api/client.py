@@ -41,6 +41,7 @@ class PlaybackClient:
         self._last_msg = 0.0  # wall time of the last frame of any kind
         self.sections = sections or {}
         self.durations: dict[int, float] = dict(data.durations) if data else {}
+        self.measured: dict[int, dict] = {}  # songId -> result of measure_song_length()
         self.names: dict[int, str | None] = dict(data.names) if data else {}
         self._seed_order = list(data.order) if data and data.order else []
         self._seed_version = data.version if data else None
@@ -171,7 +172,7 @@ class PlaybackClient:
             "songId": song, "songNumber": self.song_number(song), "songName": self.names.get(song),
             "songCount": len(self.setlist) or None,
             "position": pos, "playing": hb.get("playing"), "pad": hb.get("pad"),
-            "duration": dur, "remaining": round(dur - pos, 3) if dur is not None and pos is not None else None,
+            "duration": dur, "durationSource": self._duration_source(song), "remaining": round(dur - pos, 3) if dur is not None and pos is not None else None,
             "sectionId": sec,
             "sectionNumber": next((i + 1 for i, r in enumerate(rows) if r[1] == sec), None),
             "fadedOut": self.norm.fade,  # None = unknown (fade is not in the heartbeat)
@@ -186,6 +187,12 @@ class PlaybackClient:
             "soloed": sorted(k for k, v in self.norm.mixer_solo.items() if v),
             "heartbeatAge": round(time.time() - self._last_msg, 2) if self._last_msg else None,
         }
+
+    def _duration_source(self, song) -> str | None:
+        m = self.measured.get(song)
+        if m is not None and self.durations.get(song) == m["duration"]:
+            return "measured-precise" if m["precise"] else "measured-quick"
+        return "file" if song in self.durations else None
 
     def wait_for(self, pred: Callable[[dict], bool], timeout: float = 3.0) -> bool:
         end = time.time() + timeout
@@ -276,10 +283,109 @@ class PlaybackClient:
         self._require_stopped()
         self._send({"transportPreviousSong": {}})
 
+    # ---- song length ---------------------------------------------------------
+    HUGE_SEEK = 86400.0
+
+    def measure_song_length(self, precise: bool = False, settle: float = 3.0) -> dict:
+        r = self._measure_core(precise, settle)
+        self._store_length(r)
+        return r
+
+    def _measure_core(self, precise: bool, settle: float) -> dict:
+        """Length of the SELECTED song. Only runs while stopped; restores the song, position and fade.
+
+        Quick (about 6 s): seek far past the end. Playback clamps the seek to the end of the song and the
+        heartbeat reports where it landed. That is a lower bound, 1-4 s short of the real end (measured).
+        Precise (about 17 s): also play the last seconds with the tracks faded out and take the last position
+        the heartbeat reports while playing; the real end is within one heartbeat (1 s) after it, so the result
+        is that position + 0.5 s (+- 0.5 s). Also reports what happens at the end: "stops" (the next song is
+        selected, stopped) or "continues" (the next song starts playing by itself).
+
+        Returns {songId, duration, lowerBound, precise, precision, endBehavior, method}."""
+        self._require_stopped()
+        if precise and (self.norm.infinite_loop or self.norm.single_loop):
+            raise Refused("refused: a loop is armed; switch it off first")
+        song = self.state["songId"]
+        if song is None:
+            raise Refused("refused: no song selected")
+        fade_was = self.norm.fade
+        was_walking, self._walking = self._walking, True
+        try:
+            if precise and fade_was is not True:
+                self.fade(True)
+            self.return_to_start()
+            self.wait_for(lambda s: s["position"] is not None and s["position"] < 0.01, settle)
+            self.seek(self.HUGE_SEEK)
+            if not self.wait_for(lambda s: (s["position"] or 0) > 0.5, settle):
+                raise Refused("could not read the song length (the seek had no effect)")
+            time.sleep(settle * 0.4)  # let a second heartbeat confirm the clamp
+            lower = self.state["position"]
+            result = {"songId": song, "lowerBound": lower, "duration": lower, "precise": False,
+                      "precision": 4.0, "endBehavior": None, "method": "seek-clamp"}
+            if precise:
+                self.seek(max(0.0, lower - 6.0))
+                self.wait_for(lambda s: abs((s["position"] or 0) - max(0.0, lower - 6.0)) < 2.0, settle)
+                last, ended, nxt = None, None, None
+                self.play()
+                deadline = time.time() + 20.0
+                while time.time() < deadline:
+                    hb = self.norm.hb
+                    if hb and hb["song"] == song and hb["playing"]:
+                        last = hb["t"]
+                    elif hb and (hb["song"] != song or not hb["playing"]) and last is not None:
+                        ended, nxt = time.time(), hb
+                        break
+                    time.sleep(0.05)
+                if last is not None and nxt is not None:
+                    result.update(duration=round(last + 0.5, 2), precise=True, precision=0.5, method="played-to-end",
+                                  endBehavior="continues" if nxt["song"] != song and nxt["playing"] else "stops")
+            return result
+        finally:
+            try:
+                if self.state["playing"]:
+                    self.pause()
+                    self.wait_for(lambda s: s["playing"] is False, settle)
+                if self.state["songId"] != song:
+                    self.select_song(song)
+                    self.wait_for(lambda s: s["songId"] == song, settle)
+                self.return_to_start()
+                self.wait_for(lambda s: s["position"] is not None and s["position"] < 0.01, settle)
+                if precise and fade_was is not True:
+                    self.fade(False)
+            finally:
+                self._walking = was_walking
+
+    def _measure_here(self, precise: bool, settle: float) -> None:
+        try:
+            r = self._measure_core(precise, settle)
+        except Refused as e:
+            self._emit({"type": "song.length.failed", "ts": time.time(), "songId": self.state["songId"], "error": str(e)})
+            return
+        self._store_length(r)
+
+    def _store_length(self, r: dict) -> None:
+        sid, prev = r["songId"], self.measured.get(r["songId"])
+        if prev is not None and prev["precise"] and not r["precise"]:
+            r = prev  # a quick lower bound never replaces a precise value
+        self.measured[sid] = r
+        self.durations[sid] = r["duration"]
+        self._emit({"type": "song.length", "ts": time.time(), **r})
+
+    def measure_setlist(self, precise: bool = False, settle: float = 3.0) -> dict[int, dict]:
+        """Walk the setlist (this also refreshes the song order) and measure every song."""
+        self.walk_setlist(settle, measure="precise" if precise else "quick")
+        return dict(self.measured)
+
     # ---- setlist discovery ----------------------------------------------------
-    def walk_setlist(self, settle: float = 3.0) -> list[int]:
+    def walk_setlist(self, settle: float = 3.0, measure: str | None = None) -> list[int]:
         """Read the setlist order by stepping Previous to the start then Next to the end,
-        then restoring the original song. Only runs while stopped. Takes ~2 s per song."""
+        then restoring the original song. Only runs while stopped. Takes ~2 s per song.
+
+        measure="quick" or "precise" also records each song's length on the way (see measure_song_length);
+        quick adds about 6 s per song, precise about 17 s per song (and plays the last seconds of each song
+        with the tracks faded out)."""
+        if measure not in (None, "quick", "precise"):
+            raise ValueError("measure must be None, 'quick' or 'precise'")
         self._require_stopped()
         original = self.state["songId"]
         self._walking = True
@@ -292,8 +398,12 @@ class PlaybackClient:
             while step(self.previous_song) and (guard := guard + 1) < 200:
                 pass
             order = [self.state["songId"]]
+            if measure:
+                self._measure_here(measure == "precise", settle)
             while step(self.next_song) and len(order) < 200:
                 order.append(self.state["songId"])
+                if measure:
+                    self._measure_here(measure == "precise", settle)
             if original is not None and original != self.state["songId"]:
                 self.select_song(original)
                 self.wait_for(lambda s: s["songId"] == original, settle)

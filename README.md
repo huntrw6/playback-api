@@ -59,6 +59,18 @@ the real state if it never does.
 playback-api listen --fast
 ```
 
+## Song lengths
+Playback never reports a song's length, but a seek far past the end is clamped to the end and the heartbeat says
+where it landed. The API reads that, and can also play the last seconds silently to get the exact end.
+```bash
+playback-api measure-songs              # quick: about 6 s per song, 1-4 s short of the real end
+playback-api measure-songs --precise    # about 17 s per song, within 0.5 s, and says whether the song stops or carries on
+playback-api walk-setlist --measure quick   # find the song order and measure in one pass
+```
+Needs control to be allowed, the transport stopped, and no loop armed (precise). The song, position and fade are put
+back afterwards. In `/setlist` and `state`, `duration` is filled in and `durationSource` says where it came from
+(`file`, `measured-quick` or `measured-precise`). A quick value never replaces a precise one.
+
 ## Loops
 ```bash
 curl -X POST localhost:8787/command/loop-once -d '{"active": true}'      # repeat the playing section once
