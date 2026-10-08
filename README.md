@@ -61,10 +61,12 @@ playback-api listen --fast
 
 ## Song lengths
 Playback never reports a song's length, but a seek far past the end is clamped to the end and the heartbeat says
-where it landed. The API reads that, and can also play the last seconds silently to get the exact end.
+where it landed. That spot is the start of the song's final measure, which is where the song ends for a service, so the
+quick measure below is the length to use for countdowns and plans. `--precise` is optional: it plays the last seconds
+silently and finds the end of the audio tail, a few seconds later.
 ```bash
-playback-api measure-songs              # quick: about 6 s per song, 1-4 s short of the real end
-playback-api measure-songs --precise    # about 17 s per song, within 0.5 s, and says whether the song stops or carries on
+playback-api measure-songs              # about 6 s per song, reads the start of the final measure (recommended)
+playback-api measure-songs --precise    # optional, about 17 s per song: the end of the audio tail, and whether the song stops or carries on
 playback-api walk-setlist --measure quick   # find the song order and measure in one pass
 ```
 Needs control to be allowed, the transport stopped, and no loop armed (precise). The song, position and fade are put

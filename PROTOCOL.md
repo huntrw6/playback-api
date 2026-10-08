@@ -74,7 +74,7 @@ Section IDs and song IDs are plain integers. Song IDs are not in setlist order.
 - `transportFade` direction 1 = out, 0 = in; the pad fades out over about 5-7 s after `transportPad {playing:false}`.
 
 ## Song length (v2.2, measured)
-- `waveformSeek` far past the end is **clamped** by Playback and the next heartbeat reports the clamped position. On five real songs the clamp was 1.2-4.0 s short of the real end (279.53 / 265.85 / 260.17 / 410.83 / 606 s against 282.2 / 267.6 / 264.5 / 414.6 / 607.3 s). It is a lower bound, not the length.
+- `waveformSeek` far past the end is **clamped** by Playback and the next heartbeat reports the clamped position. **The clamped playhead is the start of the song's final measure** (operator-confirmed), which is where the song ends for a service, so for countdowns and service plans it is the song's length, not an approximation. On five real songs it read 279.53 / 265.85 / 260.17 / 410.83 / 606 s. Playing a song to its very last audio reaches a later point (282.2 / 267.6 / 264.5 / 414.6 / 607.3 s on the same songs), which is the end of the audio tail, not the end of the last measure.
 - The true end is the last heartbeat position seen while playing, plus about 0.5 s (heartbeats are 1 s apart). Repeated runs agreed to within 0.3 s.
 - What the end does depends on the song: the next song is selected and stopped (4 of 5), or the next song starts playing by itself (1 of 5, the `setlistSelectSongTransition` behaviour). Playback has no field that says which.
 - No tempo or BPM field exists in any message.

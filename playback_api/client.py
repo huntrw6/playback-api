@@ -295,7 +295,8 @@ class PlaybackClient:
         """Length of the SELECTED song. Only runs while stopped; restores the song, position and fade.
 
         Quick (about 6 s): seek far past the end. Playback clamps the seek to the end of the song and the
-        heartbeat reports where it landed. That is a lower bound, 1-4 s short of the real end (measured).
+        heartbeat reports where it landed: the start of the song's final measure, i.e. where the song ends for a service
+        (operator-confirmed). Use this as the length for countdowns and plans.
         Precise (about 17 s): also play the last seconds with the tracks faded out and take the last position
         the heartbeat reports while playing; the real end is within one heartbeat (1 s) after it, so the result
         is that position + 0.5 s (+- 0.5 s). Also reports what happens at the end: "stops" (the next song is
